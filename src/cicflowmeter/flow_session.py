@@ -7,6 +7,16 @@ from .features.context.packet_direction import PacketDirection
 from .features.context.packet_flow_key import get_packet_flow_key
 from .flow import Flow
 
+#--------------------------------------------------------------------#
+from .model_cic import ClasifierRf
+from .apiRyu import Request
+
+#--------------------------------------------------------------------#
+import os.path
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+print(sys.path)
+
 EXPIRED_UPDATE = 40
 MACHINE_LEARNING_API = "http://localhost:8000/predict"
 GARBAGE_COLLECT_PACKETS = 100
@@ -26,6 +36,8 @@ class FlowSession(DefaultSession):
         self.packets_count = 0
 
         self.clumped_flows_per_label = defaultdict(list)
+        self.classified = ClasifierRf()
+        self.apiReq = Request()
 
         super(FlowSession, self).__init__(*args, **kwargs)
 
@@ -104,8 +116,11 @@ class FlowSession(DefaultSession):
         # TODO: Garbage Collection / Feature Extraction should have a separate thread
         if not self.url_model:
             print("Garbage Collection Began. Flows = {}".format(len(self.flows)))
+            #classified = ClasifierRf()
+            #print(classified.sel_feat)
         keys = list(self.flows.keys())
         for k in keys:
+            count = 0
             flow = self.flows.get(k)
 
             if (
@@ -114,12 +129,21 @@ class FlowSession(DefaultSession):
                 or flow.duration > 90
             ):
                 data = flow.get_data()
+                #print(type(data), data)
+                clean_data = self.classified.clean_df(data)
+                #print(self.classified.predict_rf(clean_data))
+                count = count + self.classified.predict_rf(clean_data)
+                if self.classified.predict_rf(clean_data) == 1:
+                    print (data.get('src_ip'),data.get('dst_port'))
+                    self.apiReq.apiCall(data.get('src_ip'))
+                print(count)
 
                 if self.csv_line == 0:
                     self.csv_writer.writerow(data.keys())
 
                 self.csv_writer.writerow(data.values())
                 self.csv_line += 1
+                #print(data)
 
                 del self.flows[k]
         if not self.url_model:
